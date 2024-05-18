@@ -14,13 +14,23 @@ from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.vectorstores import FAISS
 from retriever_initializer import initialize_retriever
 from embedding import get_embeddingmodel
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM, pipeline
+from langchain_community.llms.huggingface_pipeline import HuggingFacePipeline
+# # Use a smaller model
+# model_name = "t5-large"
+# tokenizer = AutoTokenizer.from_pretrained(model_name)
+# model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+
+# # Initialize the text generation pipeline
+# pipe = pipeline("text2text-generation", model=model, tokenizer=tokenizer, max_length=1000)
+# llm = HuggingFacePipeline(pipeline=pipe)
+
 
 chat_history = []
 db = FAISS.load_local('./fiass_index_tata', get_embeddingmodel()  , allow_dangerous_deserialization= True)
 retriever = initialize_retriever(db)
 
-llm = Ollama(model="phi3", callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]))
-
+# llm = Ollama(model="phi3", callback_manager=CallbackManager([]))
 
 def retrieve_documents(retriever, llm, query):
     contextualize_q_system_prompt = """Given a chat history and the latest user question \
@@ -51,7 +61,7 @@ def retrieve_documents(retriever, llm, query):
     
     combined_context = " ".join([doc.page_content for doc in contexts])
     
-    return combined_context
+    return combined_context[:1000]
 
 def retrieve_final_query(context, query):
     qa_system_prompt = """You are an assistant for question-answering tasks. \
@@ -77,15 +87,15 @@ def retrieve_final_query(context, query):
     )
     return prompt
     
-def generate_response(query):
+def generate_response(query, llm):
     global retriever
-    global llm
+    # global llm
     
     retrieved_context= retrieve_documents(retriever, llm, query)
     
-    print("\nGenerating the response....")
     rfinal_query = retrieve_final_query(retrieved_context, query)
-
+    print("\nGenerating the response....")
+    
     response = llm.generate(prompts=[rfinal_query])
     parsed_response = StrOutputParser().parse(response)
     str_response = parsed_response.generations[0][0].text
@@ -93,4 +103,5 @@ def generate_response(query):
     
     return str_response
 
-    
+
+print(generate_response('How should pregnant women drive?'))
