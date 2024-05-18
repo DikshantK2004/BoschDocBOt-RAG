@@ -11,8 +11,16 @@ from langchain_core.chat_history import BaseChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.messages import HumanMessage, AIMessage
+from langchain_community.vectorstores import FAISS
+from retriever_initializer import initialize_retriever
+from embedding import get_embeddingmodel
 
 chat_history = []
+db = FAISS.load_local('./fiass_index_tata', get_embeddingmodel()  , allow_dangerous_deserialization= True)
+retriever = initialize_retriever(db)
+
+llm = Ollama(model="phi3", callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]))
+
 
 def retrieve_documents(retriever, llm, query):
     contextualize_q_system_prompt = """Given a chat history and the latest user question \
@@ -69,9 +77,10 @@ def retrieve_final_query(context, query):
     )
     return prompt
     
-def generate_response(retriever, query):
+def generate_response(query):
+    global retriever
+    global llm
     
-    llm = Ollama(model="phi3", callback_manager=CallbackManager([StreamingStdOutCallbackHandler()]))
     retrieved_context= retrieve_documents(retriever, llm, query)
     
     print("\nGenerating the response....")
