@@ -3,5 +3,15 @@ This Directory Provides implemenation of a chat-bot utilising open source model 
 
 Please ensure all the requirements mentioned in the requirements.txt have been installed.
 
+You are required to install Ollama first 
+
+and then run the command 
+ollama pull phi3
+Once it has been downloaded, run 
+ollama run phi3
+
+Include your pdf files in a folder and replace the path in db_creator.py for the same 
+
 Execute the command 'python3 db_creator.py' to create the index for pdf files.
+
 Executing main.py instantiates the chat with the LLM.
