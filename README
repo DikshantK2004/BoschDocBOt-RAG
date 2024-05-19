@@ -1,0 +1,7 @@
+
+This Directory Provides implemenation of a chat-bot utilising open source model phi3 along with langchain.
+
+Please ensure all the requirements mentioned in the requirements.txt have been installed.
+
+Execute the command 'python3 db_creator.py' to create the index for pdf files.
+Executing main.py instantiates the chat with the LLM.

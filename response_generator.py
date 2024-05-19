@@ -37,6 +37,7 @@ def retrieve_documents(retriever, llm, query):
     which might reference context in the chat history, formulate a standalone question \
     which can be understood without the chat history. Do NOT answer the question, \
     just reformulate it if needed and otherwise return it as is.
+    If the question is ambiguous about which car model (Nexon, Punch, Exter, Verna) is being referred to, ask the user to specify the car model.
     You will LOSE THE JOB IF YOU DON'T FOLLOW INSTRUCTIONS.
     One more thing don't use synonyms, reformulation means embedding context of whole chat into a single query"""
     contextualize_q_prompt = ChatPromptTemplate.from_messages(
@@ -69,8 +70,7 @@ def retrieve_final_query(context, query):
     If the user query is not in context, just say that you don't know. \
     Please do not provide any information that is not in the context. \
     Keep in mind, you will lose the job, if you answer out of CONTEXT questions.\
-    Don't add any extra information you know. Stick to what is given in the context.\
-
+    If it is not clear which car model (Nexon, Punch, Exter, Verna) the user is referring to, ask the user to specify the car model.
     CONTEXT: {context}"""
     qa_prompt = ChatPromptTemplate.from_messages(
         [
