@@ -1,5 +1,5 @@
 langchain-community
 pdfminer.six
-chromadb
+FAISS
 ollama
 gradio

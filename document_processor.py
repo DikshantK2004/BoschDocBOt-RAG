@@ -19,23 +19,30 @@ def process_documents(documents):
 
 def load_and_process_documents(pdf_paths):
     from pdf_extractor import extract_text_from_pdf
-    
     all_documents = []
-    
+    embedding_function = None  # Initialize the embedding function variable
+
+    # Initialize an empty FAISS index
+    faiss_index = None
+
     for pdf_path in pdf_paths:
+        # Extract text from each PDF and create a Document object
         document_text = extract_text_from_pdf(pdf_path)
         documents = [Document(document_text)]
         all_documents.extend(documents)
-        
-    docs, embedding_function = process_documents(all_documents)
-    
-    faiss_index = FAISS.from_documents(docs, embedding_function)
-    
-    for pdf_path in pdf_paths[1:]:
-        document_text = extract_text_from_pdf(pdf_path)
-        documents = [Document(document_text)]
-        docs, _ = process_documents(documents)
-        faiss_index_i = FAISS.from_documents(docs, embedding_function)
-        faiss_index.merge_from(faiss_index_i)
-        
+
+        # Process documents to get text chunks and load embeddings model only once
+        if embedding_function is None:
+            docs, embedding_function = process_documents(documents)
+        else:
+            docs, _ = process_documents(documents)
+
+        # Create or merge documents into the FAISS index
+        if faiss_index is None:
+            faiss_index = FAISS.from_documents(docs, embedding_function)
+        else:
+            faiss_index_i = FAISS.from_documents(docs, embedding_function)
+            faiss_index.merge_from(faiss_index_i)
+
+    # Save the fully merged index after all documents are processed
     faiss_index.save_local('./faiss_index')
