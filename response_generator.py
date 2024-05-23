@@ -49,7 +49,7 @@ def retrieve_documents(retriever, llm, query):
 
     contexts = retriever.invoke(fresh_query)
     combined_context = " ".join([doc.page_content for doc in contexts])
-    return combined_context[:1000]
+    return combined_context
 
 def retrieve_final_query(context, query):
     qa_system_prompt = """You are an assistant for question-answering tasks. \
@@ -57,6 +57,7 @@ def retrieve_final_query(context, query):
     If the user query is not in context, just say that you don't know. \
     Please do not provide any information that is not in the context. \
     Keep in mind, you will lose the job, if you answer out of CONTEXT questions.\
+    Keep the response in 7-8 lines
     CONTEXT: {context}"""
     qa_prompt = ChatPromptTemplate.from_messages(
         [
@@ -79,8 +80,11 @@ def generate_response(query):
     global chat_history
 
     retrieved_context= retrieve_documents(retriever, llm, query)
-    
+    print(retrieved_context)
     rfinal_query = retrieve_final_query(retrieved_context, query)
+    print(rfinal_query)
+    
+    
     print("\nGenerating the response....")
     
     response = llm.generate(prompts=[rfinal_query])
@@ -91,4 +95,8 @@ def generate_response(query):
     if len(chat_history) > 4:
         chat_history = chat_history[-4:]
     return str_response
+
+if __name__ == "__main__":
+    query = "How to drive on Gradients?"
+    print(generate_response(query))
 
