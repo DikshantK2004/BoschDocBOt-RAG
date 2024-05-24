@@ -1,20 +1,13 @@
-from unstructured_client import UnstructuredClient
-from unstructured_client.models import shared
-from unstructured_client.models.errors import SDKError
-import pickle
-client = UnstructuredClient(api_key_auth="mr8Maj49GKr9rCyUpxa3VXG98XPnI7")
-filename = "../resume.pdf"
+from unstructured.partition.pdf import partition_pdf
 
-with open(filename, "rb") as f:
-    files=shared.Files(
-        content=f.read(),
-        file_name=filename,
-    )
+# elements = partition_pdf("tata.pdf")
 
-req = shared.PartitionParameters(files=files)
+elements_fast = partition_pdf("/home/dikshant/BOSCH/Round1/tata.pdf",
+    chunking_strategy="by_title",
+    strategy="fast",
+    max_characters=1500,
+    overlap=300,
+    overlap_all= True
+  )
 
-try:
-    resp = client.general.partition(req)
-    pickle.dump(resp, file=open("partitioned.pkl", "wb"))
-except SDKError as e:
-    print(e)
+print(elements_fast)

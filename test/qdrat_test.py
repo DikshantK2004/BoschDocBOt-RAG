@@ -1,12 +1,11 @@
 from qdrant_client import QdrantClient
 from llama_index.core import SimpleDirectoryReader
-from qdrant_client.models import Distance, VectorParams
-API_KEY = "47RB2yEaTAKRR-eTXUO4UqpKq8SkzTOnQkIEN-5H0JTGWKGXQLj4Aw"
-URL = "https://6bf9b770-63e6-482c-a993-5b0d87dd1c0e.us-east4-0.gcp.cloud.qdrant.io:6333"
+from qdrant_client.models import Distance, VectorParams, PointStruct
+
+
 qdrant_client = QdrantClient(
-    url=URL, 
-    api_key=API_KEY,
-    timeout= 1000
+    timeout=3000,
+    path='qdrant_tata'
 )
 
 
@@ -19,8 +18,6 @@ import numpy as np
 
 
 # Text embedding model
-text_embed_model = SentenceTransformer('all-MiniLM-L6-v2')
-
 # Image embedding model using CLIP
 class CLIPEmbedding:
     def __init__(self):
@@ -32,25 +29,37 @@ class CLIPEmbedding:
         inputs = self.processor(images=image, return_tensors="pt")
         with torch.no_grad():
             outputs = self.model.get_image_features(**inputs)
+        # print(outputs.cpu().numpy())
+        return outputs.cpu().numpy()
+    
+    def embed_text(self, text):
+        inputs = self.processor(text=text, return_tensors="pt")
+        with torch.no_grad():
+            outputs = self.model.get_text_features(**inputs)
         return outputs.cpu().numpy()
 
 image_embed_model = CLIPEmbedding()
 
 
 # Create the MultiModal index
-documents = SimpleDirectoryReader("./mixed_wiki/").load_data()
+text_documents = SimpleDirectoryReader("/home/dikshant/BOSCH/Round1/better_model_v2/test/verna/texts").load_data()
+image_documents = SimpleDirectoryReader("/home/dikshant/BOSCH/Round1/better_model_v2/test/verna/images_verna").load_data()
 
-for doc in documents:
-    print(type(doc))
-    if str(type(doc)) == "<class 'llama_index.core.schema.ImageDocument'>":
-        l = image_embed_model.embed_image(doc.image_path)
-        print(doc.image_path, l.shape)
-        doc.embedding = l[0].tolist()
-    else:
+
+print(len(text_documents))
+print(len(image_documents))
+text_embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+
+for doc in text_documents:
         l = text_embed_model.encode(doc.text)
-        print(l.shape)
+        # print(l.shape)
         doc.embedding = l.tolist()
-        
+
+for img_doc in image_documents:
+    img_doc.embedding = image_embed_model.embed_image(img_doc.image_path)[0].tolist()
+    # print(img_doc.embedding.shape)
+    
 # props = documents[0].__dict__.keys()
 
 # for prop in props:
@@ -66,43 +75,43 @@ for doc in documents:
 
 # Create a text collection
 if  qdrant_client.collection_exists("text_collection") is False:
-    qdrant_client.recreate_collection(
+    qdrant_client.create_collection(
         collection_name="text_collection",
         vectors_config=VectorParams(
-            size=len(documents[31].embedding), distance=Distance.COSINE
+            size=len(text_documents[0].embedding), distance=Distance.COSINE
         )
     )
 
 # Create an image collection
 if qdrant_client.collection_exists("image_collection") is False:
-    qdrant_client.recreate_collection(
+    qdrant_client.create_collection(
         collection_name="image_collection",
         vectors_config=VectorParams(
-            size=len(documents[0].embedding), distance=Distance.COSINE
+            size=len(image_documents[0].embedding), distance=Distance.COSINE
         )
     )
 
 from llama_index.core.schema import Document, ImageDocument
 import uuid
 
-def store_documents(documents):
+def store_documents(text_documents, image_documents):
     text_points = []
     image_points = []
     
-    for doc in documents:
-        if str(type(doc)) == "<class 'llama_index.core.schema.Document'>":
-            text_point = {
-                "id": str(uuid.uuid4()),
-                "vector": doc.embedding,
-                "payload": {"type": "text", "content": doc.text}
-            }
+    for doc in text_documents:
+            text_point = PointStruct(
+                id=  str(uuid.uuid4()),
+                vector=  doc.embedding,
+                payload=  {"type": "text", "content": doc.text},
+            )
             text_points.append(text_point)
-        else:
-            image_point = {
-                "id": str(uuid.uuid4()),
-                "vector": doc.embedding,
-                "payload": {"type": "image", "content": doc.image_path}
-            }
+    
+    for doc in image_documents:
+            image_point = PointStruct(
+                id = str(uuid.uuid4()),
+                vector= doc.embedding,
+                payload= {"type": "image", "content": doc.image_path},
+            )
             image_points.append(image_point)
     
     if text_points:
@@ -117,4 +126,4 @@ def store_documents(documents):
             points=image_points
         )
 
-store_documents(documents)
+store_documents(text_documents, image_documents)
