@@ -22,7 +22,80 @@ chat_history = []
 db = FAISS.load_local('./faiss_index', get_embeddingmodel()  , allow_dangerous_deserialization= True)
 retriever = initialize_retriever(db)
 
+
+from qdrant_client import QdrantClient , models
+
+client = QdrantClient(path = "/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/qdrant_data_hope_plz",
+                      timeout= 3000)
+
+
+
+from sentence_transformers import SentenceTransformer
+from transformers import CLIPProcessor, CLIPModel
+import torch
+from PIL import Image
+import numpy as np
+
+
+# Text embedding model
+# Image embedding model using CLIP
+class CLIPEmbedding:
+    def __init__(self):
+        self.processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+        self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32")
+    
+    def embed_image(self, image_path):
+        image = Image.open(image_path)
+        inputs = self.processor(images=image, return_tensors="pt")
+        with torch.no_grad():
+            outputs = self.model.get_image_features(**inputs)
+        # print(outputs.cpu().numpy())
+        return outputs.cpu().numpy()
+    
+    def embed_text(self, text):
+        inputs = self.processor(text=text, return_tensors="pt")
+        with torch.no_grad():
+            outputs = self.model.get_text_features(**inputs)
+        return outputs.cpu().numpy()
+
+image_embed_model = CLIPEmbedding()
+
+text_embed_model = SentenceTransformer('sentence-transformers/roberta-large-nli-stsb-mean-tokens')
+
+
 llm = Ollama(model="phi3", callback_manager=CallbackManager([]))
+
+
+
+def retrieve_images(client, pdf_name, page_number,query):
+    query_filter = models.Filter(
+        must=[
+            models.FieldCondition(
+                key="pdf_name",  # Assuming 'pdf_name' is the field in your collection
+                match=models.MatchValue(
+                    value=pdf_name  # Specific PDF name extracted from text query
+                ),
+            ),
+            models.FieldCondition(
+                key="page",  # Assuming 'page' is the field in your collection
+                match=models.MatchValue(
+                    value=page_number  # Specific page number extracted from text query
+                ),
+            )
+        ]
+    )
+    
+    image_response = client.search(
+        collection_name='image_collection',
+        query_vector=image_embed_model.embed_text(query)[0], 
+        query_filter=query_filter,
+        limit=1
+    )
+    
+    return image_response
+
+
+
 
 def retrieve_documents(retriever, llm, query):
     contextualize_q_system_prompt = """Given a chat history and the latest user question \
@@ -46,10 +119,19 @@ def retrieve_documents(retriever, llm, query):
 
     response = llm.generate(prompts=[prompt_text])
     fresh_query = StrOutputParser().parse(response).generations[0][0].text
-
-    contexts = retriever.invoke(fresh_query)
-    combined_context = " ".join([doc.page_content for doc in contexts])
-    return combined_context
+    print("hi")
+    # contexts = retriever.invoke(fresh_query)
+    resp = client.search(collection_name='text_collection', query_vector= text_embed_model.encode(query) , limit=10)
+    contents = [r.payload['content'] for r in resp]
+    combined_context = "\n".join(contents)
+    for r in resp:
+        print('--------------------------------------------------------')
+        print(r.score)
+        print(r.payload['content'])
+        print(r.payload['page'])
+        print(r.payload['pdf_name'])
+    # combined_context = " ".join([doc.page_content for doc in contexts])
+    return combined_context , resp
 
 def retrieve_final_query(context, query):
     qa_system_prompt = """You are an assistant for question-answering tasks. \
@@ -79,10 +161,16 @@ def generate_response(query):
     global llm
     global chat_history
 
-    retrieved_context= retrieve_documents(retriever, llm, query)
-    print(retrieved_context)
+    retrieved_context , resp = retrieve_documents(retriever, llm, query)
+    # print(retrieved_context)
+    pdf_name = resp[0].payload['pdf_name']
+    page_number = resp[0].payload['page']
+    print(pdf_name, page_number)
+    image_response = retrieve_images(client, pdf_name, page_number, query)
+    img_path = image_response[0].payload['content']
+    print(img_path)
     rfinal_query = retrieve_final_query(retrieved_context, query)
-    print(rfinal_query)
+    # print(rfinal_query)
     
     
     print("\nGenerating the response....")
@@ -96,7 +184,8 @@ def generate_response(query):
         chat_history = chat_history[-4:]
     return str_response
 
-# if __name__ == "__main__":
-#     query = "How to drive on Gradients?"
-#     print(generate_response(query))
+if __name__ == "__main__":
+    query = "What is the exterior overview of the exter car ?"
+    print("hi")
+    print(generate_response(query))
 

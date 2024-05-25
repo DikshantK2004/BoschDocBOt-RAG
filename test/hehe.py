@@ -59,6 +59,14 @@ mappings = {
     "(cid:3)": " ",
 }
 
+def list_visible_dirs(directory):
+    # List all entries in the directory
+    all_entries = os.listdir(directory)
+    
+    # Filter out hidden directories (those starting with '.')
+    visible_dirs = [entry for entry in all_entries if not entry.startswith('.') and os.path.isdir(os.path.join(directory, entry))]
+    
+    return visible_dirs
 # Function to replace (cid:xx) with characters based on mappings
 def replace_cid(content):
     for cid, char in mappings.items():
@@ -66,17 +74,27 @@ def replace_cid(content):
     return content
 
 # Path to the folder containing TXT files
-folder_path = "/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/documents_aditya/exter.pdf"
+folder_path = "/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/documents_aditya_table"
 
 # Iterate over all TXT files in the folder
-for filename in os.listdir(folder_path):
-    if filename.endswith(".txt"):
-        file_path = os.path.join(folder_path, filename)
-        # Read the content of the file
-        with open(file_path, "r", encoding="utf-8") as file:
-            content = file.read()
-        # Replace (cid:xx) with characters
-        modified_content = replace_cid(content)
-        # Write the modified content back to the file
-        with open(file_path, "w", encoding="utf-8") as file:
-            file.write(modified_content)
+for folder in list_visible_dirs(folder_path):
+  folder_path_1 = os.path.join(folder_path, folder)
+#   print(folder_path_1)
+  for folder in list_visible_dirs(folder_path_1):
+    folder_path_2 = os.path.join(folder_path_1, folder)
+    # print(folder_path_2)
+    for folder in list_visible_dirs(folder_path_2):
+        folder_path_3 = os.path.join(folder_path_2, folder)
+        # print(folder_path_3)
+        for filename in os.listdir(folder_path_3):
+            print(filename)
+            if filename.endswith(".txt"):
+                file_path = os.path.join(folder_path_3, filename)
+                        # Read the content of the file
+                with open(file_path, "r", encoding="utf-8") as file:
+                    content = file.read()
+                        # Replace (cid:xx) with characters
+                modified_content = replace_cid(content)
+                        # Write the modified content back to the file
+                with open(file_path, "w", encoding="utf-8") as file:
+                        file.write(modified_content)

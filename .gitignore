@@ -9,3 +9,10 @@ documents_aditya
 test/images
 test/json
 env
+qdrant_data_*
+table_data
+updated_documents
+documents_aditya*
+text_documents.json
+test/json.zip
+image_documents.json

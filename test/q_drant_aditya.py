@@ -1,11 +1,11 @@
 from qdrant_client import QdrantClient
 from llama_index.core import SimpleDirectoryReader
 from qdrant_client.models import Distance, VectorParams, PointStruct
-
-
+import json
+import re
 qdrant_client = QdrantClient(
     timeout=3000,
-    path='qdrant_tata'
+    path='qdrant_data_why_new_model_now'
 )
 
 
@@ -42,13 +42,28 @@ image_embed_model = CLIPEmbedding()
 
 
 # Create the MultiModal index
-text_documents = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/documents_aditya/Next_Gen_Verna.pdf").load_data()
-image_documents = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/content/verna/images_verna").load_data()
+text_documents_1 = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/updated_documents/Next_Gen_Verna.pdf").load_data()
+text_documents_2 = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/updated_documents/exter.pdf").load_data()
+text_documents_3 = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/updated_documents/nexon-owner-manual-2022.pdf").load_data()
+text_documents_4 = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/updated_documents/punch-bsvi-09-09-21.pdf").load_data()
 
+text_documents = text_documents_1 + text_documents_2 + text_documents_3 + text_documents_4
+
+image_documents = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/test/images").load_data()
+
+text_data = [doc.to_dict() for doc in text_documents]  # Convert each document to dictionary if not already
+image_data = [doc.to_dict() for doc in image_documents]
+
+with open('text_documents.json', 'w') as f:
+    json.dump(text_data, f)
+
+with open('image_documents.json', 'w') as f:
+    json.dump(image_data, f)
 
 print(len(text_documents))
 print(len(image_documents))
-text_embed_model = SentenceTransformer('all-MiniLM-L6-v2')
+
+text_embed_model = SentenceTransformer('sentence-transformers/roberta-large-nli-stsb-mean-tokens')
 
 
 for doc in text_documents:
@@ -94,24 +109,70 @@ if qdrant_client.collection_exists("image_collection") is False:
 from llama_index.core.schema import Document, ImageDocument
 import uuid
 
+def extract_pdf_info_regex(file_path):
+    # Define a regular expression pattern to extract the PDF name and page number
+    pattern = r'.*/([^/]+)_page_(\d+)\.txt$'
+    match = re.search(pattern, file_path)
+    
+    if match:
+        pdf_name = match.group(1)  # 'Next_Gen_Verna.pdf'
+        page_number = match.group(2)  # '1'
+        print(pdf_name, page_number)
+        return pdf_name, page_number
+    else:
+        return None, None
+    
+def extract_pdf_info_regex_image(file_path):
+    # Define a regular expression pattern to extract the PDF name and page number
+    pattern = r'([^/]+)_page_(\d+)_image_(\d+)\.png$'
+    match = re.search(pattern, file_path)
+    
+    if match:
+        pdf_name = match.group(1)  # 'Next_Gen_Verna.pdf'
+        page_number = match.group(2)  # '1'
+        print(pdf_name, page_number)
+        return pdf_name, page_number
+    else:
+        return None, None
+
 def store_documents(text_documents,image_documents):
     text_points = []
     image_points = []
     
     for doc in text_documents:
-            text_point = PointStruct(
-                id=  str(uuid.uuid4()),
-                vector=  doc.embedding,
-                payload=  {"type": "text", "content": doc.text},
-            )
+            data = doc.metadata
+            print(data['file_path'])
+            pdf_name, page_number = extract_pdf_info_regex(data['file_path'])
+            if pdf_name is not None and page_number is not None:
+                text_point = PointStruct(
+                    id=  str(uuid.uuid4()),
+                    vector=  doc.embedding,
+                    payload=  {"type": "text", "content": doc.text, "page": int(page_number), "pdf_name": pdf_name},
+                )
+            else :
+                  text_point = PointStruct(
+                    id=  str(uuid.uuid4()),
+                    vector=  doc.embedding,
+                    payload=  {"type": "text", "content": doc.text},
+                )
             text_points.append(text_point)
     
     for doc in image_documents:
-            image_point = PointStruct(
-                id = str(uuid.uuid4()),
-                vector= doc.embedding,
-                payload= {"type": "image", "content": doc.image_path},
-            )
+            data = doc.metadata
+            print(data['file_path'])
+            pdf_name, page_number = extract_pdf_info_regex_image(data['file_path'])
+            if pdf_name is not None and page_number is not None:
+                image_point = PointStruct(
+                    id=  str(uuid.uuid4()),
+                    vector=  doc.embedding,
+                    payload=  {"type": "text", "content": doc.image_path, "page": int(page_number), "pdf_name": pdf_name},
+                )
+            else :
+                  image_point = PointStruct(
+                    id=  str(uuid.uuid4()),
+                    vector=  doc.embedding,
+                    payload=  {"type": "text", "content": doc.image_path},
+                )
             image_points.append(image_point)
     
     if text_points:
@@ -120,10 +181,10 @@ def store_documents(text_documents,image_documents):
             points=text_points
         )
     
-    # if image_points:
-    #     qdrant_client.upsert(
-    #         collection_name="image_collection",
-    #         points=image_points
-    #     )
+    if image_points:
+        qdrant_client.upsert(
+            collection_name="image_collection",
+            points=image_points
+        )
 
 store_documents(text_documents, image_documents)
