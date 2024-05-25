@@ -38,10 +38,10 @@ image_embed_model = CLIPEmbedding()
 text_embed_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 
-query = "What is vehicle identification number?"
+query = input("Enter the query: ")
 resp = client.search(collection_name='text_collection', query_vector= text_embed_model.encode(query) , limit=5)
 
-props = resp[0].__dict__.keys()
+# props = resp[0].__dict__.keys()
 
 for r in resp:
     print('--------------------------------------------------------')
@@ -52,7 +52,7 @@ resp = client.search(collection_name='image_collection', query_vector= image_emb
 print('--------------------------------------------------------')
 print('--------------------------------------------------------')
 
-props = resp[0].__dict__.keys()
+# props = resp[0].__dict__.keys()
 
 for r in resp:
     print('--------------------------------------------------------')
