@@ -45,7 +45,7 @@ image_embed_model = CLIPEmbedding()
 # text_documents_1 = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/test/updated_documents/Next_Gen_Verna.pdf").load_data()
 # text_documents_2 = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/test/updated_documents/exter.pdf").load_data()
 # text_documents_3 = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/test/updated_documents/nexon-owner-manual-2022.pdf").load_data()
-text_documents_4 = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/test/updated_documents/punch-bsvi-09-09-21.pdf").load_data()
+text_documents_4 = SimpleDirectoryReader("/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/documents_aditya/exter.pdf").load_data()
 
 text_documents = text_documents_4 #+ text_documents_2 + text_documents_3 + text_documents_4
 
@@ -89,9 +89,9 @@ for doc in text_documents:
     
 
 # Create a text collection
-if  qdrant_client.collection_exists("text_collection_punch-bsvi-09-09-21") is False:
+if  qdrant_client.collection_exists("text_collection_exter") is False:
     qdrant_client.create_collection(
-        collection_name="text_collection_punch-bsvi-09-09-21",
+        collection_name="text_collection_exter",
         vectors_config=VectorParams(
             size=len(text_documents[0].embedding), distance=Distance.COSINE
         )
@@ -177,7 +177,7 @@ def store_documents(text_documents):
     
     if text_points:
         qdrant_client.upsert(
-            collection_name="text_collection_punch-bsvi-09-09-21",
+            collection_name="text_collection_exter",
             points=text_points
         )
     

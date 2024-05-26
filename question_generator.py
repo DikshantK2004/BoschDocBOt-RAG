@@ -89,7 +89,7 @@ def retrieve_images(client, pdf_name, page_number,query):
         collection_name='image_collection',
         query_vector=image_embed_model.embed_text(query)[0], 
         query_filter=query_filter,
-        limit=1
+        limit= 2
     )
     
     return image_response
@@ -176,13 +176,13 @@ def retrieve_final_query(query):
     qa_system_prompt = """
     You are an assistant dedicated to generating questions. Please adhere strictly to these instructions:
 
+Specific Questions Mentioning Listed Car Models: If a question directly mentions any of the car models—Tata Nexon, Tata Punch, Hyundai Exter, or Hyundai Next Gen Verna—respond with: "No further clarifications needed."
+
 General Questions: For questions that apply universally to all cars , which would generate the same response for any car, output the specific line: "This is a general query applicable to all cars." Do not return any other output or ask for further clarification.
 
 Specific Questions About Car Models: When a question indicates that the answer might vary among different models, without specifying a car, prompt the user for more information. Specifically, ask: "Could you please specify which car model you are referring to? Is it Tata Nexon, Tata Punch, Hyundai Exter, or Hyundai Next Gen Verna?"
 
 If the user specifies TATA or Hyundai, ask: "Could you please specify the model? Is it Tata Nexon, Tata Punch or Hyundai Exter, Hyundai Next Gen Verna based on what he has mentioned in the query.
-
-Specific Questions Mentioning Listed Car Models: If a question directly mentions any of the car models—Tata Nexon, Tata Punch, Hyundai Exter, or Hyundai Next Gen Verna—respond with: "No further clarifications needed."
 
 Questions About Unlisted Car Models: If a question mentions a car model that is not Tata Nexon, Tata Punch, Hyundai Exter, or Hyundai Next Gen Verna, respond by saying: "I don't have information about that car model. My expertise is limited to Tata Nexon, Tata Punch, Hyundai Exter, and Hyundai Next Gen Verna."
 
@@ -203,29 +203,201 @@ Critical Note: Your primary role is to generate appropriate follow-up questions 
     )
     return prompt
 
+from collections import defaultdict, Counter
+
 def get_context(documents, query):
-    resp = []
+    # Replace car names in the query
+    print(f"Final query is: {replace_car_names(query)}")
+    query = replace_car_names(query)
+
+    # Document to collection mapping
     mapping = {
         'Tata Nexon': 'text_collection_nexon-owner-manual-2022',
         'Tata Punch': 'text_collection_punch-bsvi-09-09-21',
         'Hyundai Exter': 'text_collection_exter',
         'Hyundai Next Gen Verna': 'text_collection_Next_Gen_Verna'
     }
+    
+    # Prepare the containers for responses and contexts
+    resp = []
+    combined_context = {doc: {'score': [], 'content': [], 'pdf_name': [], 'page': []} for doc in documents}
+    image_context = {doc: {'score': [], 'img_path': [], 'pdf_name': [], 'page': []} for doc in documents}
+
+    # Query each document collection
     for doc in documents:
         print(f"{mapping[doc]} is this")
-        resp.append(client.search(collection_name=f'{mapping[doc]}', query_vector= text_embed_model.encode(query) , limit=2))
-    combined_context = ""
-    for r in resp:
-        contents = [r.payload['content'] for r in r]
-        combined_context = "\n".join(contents)
-        for r in r:
-            print('--------------------------------------------------------')
-            print(r.score)
-            print(r.payload['content'])
-            print(r.payload['page'])
-            print(r.payload['pdf_name'])
-        # combined_context = " ".join([doc.page_content for doc in contexts])
-    return combined_context
+        resp.append(client.search(collection_name=mapping[doc], query_vector=text_embed_model.encode(query), limit=10))
+
+    # Collect the search results and image data
+    for i, r in enumerate(resp):
+        doc = documents[i]
+        for result in r:
+            combined_context[doc]['score'].append(result.score)
+            combined_context[doc]['content'].append(result.payload['content'])
+            combined_context[doc]['pdf_name'].append(result.payload['pdf_name'])
+            combined_context[doc]['page'].append(result.payload['page'])
+
+            # Retrieve associated images
+            image_response = retrieve_images(client, result.payload['pdf_name'], result.payload['page'], query)
+            if image_response:
+                for img_resp in image_response:
+                    print(img_resp.payload['content'])
+                    image_context[doc]['score'].append(img_resp.score)
+                    image_context[doc]['img_path'].append(img_resp.payload['content'])
+                    image_context[doc]['pdf_name'].append(result.payload['pdf_name'])
+                    image_context[doc]['page'].append(result.payload['page'])
+
+    # Process all texts to find top 3 ensuring at least two are from the same collection
+    all_texts = []
+    for doc in documents:
+        for idx in range(len(combined_context[doc]['score'])):
+            entry = {
+                'score': combined_context[doc]['score'][idx],
+                'content': combined_context[doc]['content'][idx],
+                'pdf_name': combined_context[doc]['pdf_name'][idx],
+                'page': combined_context[doc]['page'][idx],
+                'doc': doc
+            }
+            all_texts.append(entry)
+
+    # Sort by score
+    all_texts_sorted = sorted(all_texts, key=lambda x: x['score'], reverse=True)
+
+    # Select the top texts ensuring at least two are from the same document
+    top_texts = []
+    doc_count = Counter()
+    for text in all_texts_sorted:
+        top_texts.append(text)
+        doc_count[text['doc']] += 1
+        if len(top_texts) >= 3 and any(count >= 2 for count in doc_count.values()):
+            break
+
+    final_text_content = []
+    final_image_paths = []
+
+    # Find associated images for selected texts
+    for text in top_texts:
+        associated_images = [(image_context[text['doc']]['score'][i], image_context[text['doc']]['img_path'][i])
+                             for i in range(len(image_context[text['doc']]['pdf_name']))
+                             if image_context[text['doc']]['pdf_name'][i] == text['pdf_name'] and image_context[text['doc']]['page'][i] == text['page']]
+        if associated_images:
+            associated_images.sort(reverse=True, key=lambda x: x[0])
+            highest_image_path = associated_images[0][1]
+        else:
+            highest_image_path = None
+
+        final_text_content.append(text['content'])
+        final_image_paths.append(highest_image_path)
+
+    combined_text_content = "\n".join(final_text_content)
+    print(combined_text_content)
+    print(final_image_paths)
+    
+    return combined_text_content, final_image_paths
+    # for doc in documents:
+    #     print(f"{mapping[doc]} is this")
+    #     resp.append(client.search(collection_name=f'{mapping[doc]}', query_vector= text_embed_model.encode(query) , limit=2))
+    
+    # combined_context = {
+    #     'Tata Nexon': {
+    #         'score': [],
+    #         'content': []
+    #     },
+    #     'Tata Punch': {
+    #         'score': [],
+    #         'content': []
+    #     },
+    #     'Hyundai Exter': {
+    #         'score': [],
+    #         'content': []
+    #     },
+    #     'Hyundai Next Gen Verna': {
+    #         'score': [],
+    #         'content': []
+    #     }
+    # }
+
+    # image_context = {
+    #     'Tata Nexon': {
+    #         'score' : [], 
+    #         'img_path': []
+    #     },
+    #     'Tata Punch': {
+    #         'score' : [], 
+    #         'img_path': []
+    #     },
+    #     'Hyundai Exter': {
+    #         'score' : [], 
+    #         'img_path': []
+    #     },
+    #     'Hyundai Next Gen Verna': {
+    #         'score' : [], 
+    #         'img_path': []
+    #     }
+    # }
+    # # for r in resp:
+    # #     contents = [r.payload['content'] for r in r]
+    # #     combined_context = "\n".join(contents)
+    # #     for r in r:
+    # #         print('--------------------------------------------------------')
+    # #         print(r.score)
+    # #         print(r.payload['content'])
+    # #         print(r.payload['page'])
+    # #         print(r.payload['pdf_name'])
+
+    # #         pdf_name = r.payload['pdf_name']
+    # #         page_number = r.payload['page']
+    # # # print(pdf_name, page_number)
+    # #         image_response = retrieve_images(client, pdf_name, page_number, query)
+    # #         if image_response:
+    # #             for resp in image_response:
+    # #                 img_path = resp.payload['content']
+    # #                 print(img_path)
+    # #                 image_context[doc]['score'].append(resp.score)
+    # #                 image_context[doc]['img_path'].append(img_path)
+    #     #     print(img_path)
+    #     # combined_context = " ".join([doc.page_content for doc in contexts])
+    
+
+   
+        
+    # for result in resp:
+    #     combined_context[doc]['score'].append(result.score)
+    #     combined_context[doc]['content'].append(result.payload['content'])
+            
+    #     pdf_name = result.payload['pdf_name']
+    #     page_number = result.payload['page']
+            
+    #     if doc not in text_scores:
+    #         text_scores[doc] = []
+
+    #     text_scores[doc].append((result.score, pdf_name, page_number))
+            
+    #     image_response = retrieve_images(client, pdf_name, page_number, query)
+    #     if image_response:
+    #         for img_resp in image_response:
+    #             img_path = img_resp.payload['content']
+    #             image_context[doc]['score'].append(img_resp.score)
+    #             image_context[doc]['img_path'].append(img_path)
+    
+    # return combined_context , image_context
+
+
+def replace_car_names(query):
+    car_variants = [
+        "Tata Nexon",
+        "Tata Punch",
+        "Hyundai Exter",
+        "Hyundai Next Gen Verna"
+    ]
+
+    for car in car_variants:
+        query = query.replace(car, "car")
+    
+    query = query.replace("tata", "").replace("hyundai", "") 
+    query = ' '.join(query.split())
+
+    return query
 
 def gen_ans(context, query):
     qa_system_prompt = """You are an assistant for question-answering tasks. \
@@ -233,7 +405,6 @@ def gen_ans(context, query):
     If the user query is not in context, just say that you don't know. \
     Please do not provide any information that is not in the context. \
     Keep in mind, you will lose the job, if you answer out of CONTEXT questions.\
-    Keep the response in 7-8 lines
     CONTEXT: {context}"""
     qa_prompt = ChatPromptTemplate.from_messages(
         [
@@ -242,10 +413,10 @@ def gen_ans(context, query):
             ("human", "{input}"),
         ]
     )
-
+    print(f"final query is {replace_car_names(query)}")
     prompt = qa_prompt.format(
         chat_history=chat_history,
-        input=query,
+        input=replace_car_names(query),
         context=context
     )
 
@@ -263,8 +434,8 @@ def generate_response(query):
     query , documents = process_question(query)
     # for doc in documents:
     #     print(doc)
-    fresh_query = retrieve_documents(retriever, llm, query)
-    # print(retrieved_context)
+    fresh_query, not_needed = retrieve_documents(retriever, llm, query)
+    print(fresh_query)
     # pdf_name = resp[0].payload['pdf_name']
     # page_number = resp[0].payload['page']
     # print(pdf_name, page_number)
@@ -282,28 +453,37 @@ def generate_response(query):
     parsed_response = StrOutputParser().parse(response)
     str_response = parsed_response.generations[0][0].text
     chat_history.extend([HumanMessage(content=query), AIMessage(content=str_response)])
-    # print(str_response)
+    print("response is .... \n")
+    print(str_response)
     # if len(chat_history) > 4:
     #     chat_history = chat_history[-4:]
-    if ("This is a general query applicable to all cars " in str_response):
+    if ("This is a general query applicable to all cars" in str_response):
 
         documents =['Tata Nexon', 'Tata Punch', 'Hyundai Exter', 'Hyundai Next Gen Verna']
-        context = get_context(documents, query)
+        context, img_context = get_context(documents, fresh_query)
         print('generating final answer....')
-        response = gen_ans(context , query)
+        response = gen_ans(context , fresh_query)
     
     elif ( "No further clarifications needed" in str_response):
 
         print("generating final answer....")
-        context = get_context(documents, query)
+        context, img_context = get_context(documents, fresh_query)
         # print(context)
-        response = gen_ans(context , query)
+        response = gen_ans(context , fresh_query)
     
     else:
 
         response = str_response
 
-    return response
+    if len(chat_history) > 6:
+        chat_history = chat_history[-6:]
+
+    if img_context:
+        if img_context[0]:
+            print(img_context[0])
+            return response, img_context[0]
+
+    return response , None
 
 
 
@@ -312,6 +492,6 @@ if __name__ == "__main__":
         query = input("Enter the query: ")
         if (query == "Exit"):
             break
-        print(generate_response(query))
+        print(generate_response(query)[0])
             
 
