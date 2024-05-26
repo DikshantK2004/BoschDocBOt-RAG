@@ -11,7 +11,7 @@ test/json
 env
 qdrant_data_*
 table_data
-updated_documents
+data
 documents_aditya*
 text_documents.json
 test/json.zip
