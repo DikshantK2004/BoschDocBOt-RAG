@@ -7,7 +7,11 @@ import gradio as gr
 # gr.ChatInterface(random_response).launch()
 
 def handle_query(query, history):
-    return generate_response(query)
+    text , image = generate_response(query)
+    if image is None:
+        return text
+    full_response = f"{text}\n\n![Image]({image})"
+    return full_response
 
 
 gr.ChatInterface(
@@ -15,7 +19,6 @@ gr.ChatInterface(
     chatbot=gr.Chatbot(height= 650),
     textbox=gr.Textbox(placeholder="Query", container=False, scale=7),
     # inputs=gr.Textbox(placeholder="Enter your query here", label="Query"),
-    outputs=[gr.Text(label="Response"), gr.Image(label="Response Image")],
     title="rasMLAI QA bot",
     description="Ask any question on the documents",
     theme="soft",
@@ -26,5 +29,5 @@ gr.ChatInterface(
     clear_btn=None
 ).launch(share = True)
 
-    
+
 # print("\nAI response:\n", response)
