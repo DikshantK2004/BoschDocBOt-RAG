@@ -19,13 +19,13 @@ from langchain_community.llms.huggingface_pipeline import HuggingFacePipeline
 
 
 chat_history = []
-db = FAISS.load_local('./faiss_index', get_embeddingmodel()  , allow_dangerous_deserialization= True)
-retriever = initialize_retriever(db)
+# db = FAISS.load_local('./faiss_index', get_embeddingmodel()  , allow_dangerous_deserialization= True)
+# retriever = initialize_retriever(db)
 
-
+pdfs = ["nexon", "verna", "punch", "exter"]
 from qdrant_client import QdrantClient , models
 
-client = QdrantClient(path = "/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/qdrant_yes_i_have_hope",
+client = QdrantClient(path = "qdrant_data_fresh_5",
                       timeout= 3000)
 
 
@@ -66,6 +66,37 @@ text_embed_model = SentenceTransformer('all-MiniLM-L6-v2')
 llm = Ollama(model="phi3", callback_manager=CallbackManager([]))
 
 
+def detect_probing_need(llm, context, user_query):
+    # System prompt for detecting if probing is needed
+    detect_probing_system_prompt = """You are an assistant to detect whether probing is required by AI assistant to answer the question based on given context. Use the following pieces of \
+retrieved context to determine if additional clarification is needed from the user. If you feel relevant information \
+is present in multiple documents, ask the user to specify which document they want the answer from. Do NOT answer the question, \
+just indicate whether probing is needed and specify the area for clarification.
+Example: query: tell about vehicle petrol consumption. context:- Tata Nexon: Vehicle consumes 50L at 30 kmph , Tata Punch: Vehicle consumes 50L at 40 kmph and 80L at 60 kmph.
+So, response must be:- 
+Yes, Could you kindly confirm what vehicle do you want the info for and for what speeds?
+You will LOSE THE JOB IF YOU DON'T FOLLOW INSTRUCTIONS.
+CONTEXT: {context}"""
+
+    # Creating a chat prompt template for detecting if probing is needed
+    detect_probing_prompt = ChatPromptTemplate.from_messages(
+        [
+            ("system", detect_probing_system_prompt),
+            ("human", "{input}"),
+        ]
+    )
+
+    # Formatting the prompt with the chat history and the user query
+    prompt_text = detect_probing_prompt.format(
+        chat_history=chat_history,
+        input=user_query,
+        context = context
+    )
+
+    # Calling the LLM to generate a response
+    response = llm.generate(prompts = [prompt_text])
+    res = StrOutputParser().parse(response).generations[0][0].text
+    return res
 
 def retrieve_images(client, pdf_name, page_number,query):
     query_filter = models.Filter(
@@ -97,7 +128,7 @@ def retrieve_images(client, pdf_name, page_number,query):
 
 
 
-def retrieve_documents(retriever, llm, query):
+def retrieve_documents( llm, query):
     contextualize_q_system_prompt = """Given a chat history and the latest user question \
     which might reference context in the chat history, formulate a standalone question \
     which can be understood without the chat history. Do NOT answer the question, \
@@ -121,41 +152,33 @@ def retrieve_documents(retriever, llm, query):
     fresh_query = StrOutputParser().parse(response).generations[0][0].text
     print("hi")
     # contexts = retriever.invoke(fresh_query)
-    resp_1 = client.search(collection_name='text_collection_exter', query_vector= text_embed_model.encode(fresh_query) , limit=2)
-    resp_2 = client.search(collection_name='text_collection_nexon-owner-manual-2022', query_vector= text_embed_model.encode(fresh_query) , limit=2)
-    resp_3 = client.search(collection_name='text_collection_Next_Gen_Verna', query_vector= text_embed_model.encode(fresh_query) , limit=2)
-    resp_4 = client.search(collection_name='text_collection_punch-bsvi-09-09-21', query_vector= text_embed_model.encode(fresh_query) , limit=2)
-# props = resp[0].__dict__.keys()
-    responses = [resp_1 , resp_2 , resp_3 , resp_4]
-    combined_context = ""
-    for resp in responses:
-        contents = [r.payload['content'] for r in resp]
-        combined_context = "\n".join(contents)
+    rs = []
+    for pdf in pdfs:
+        resp = client.search(collection_name=f'text_collection_{pdf}', query_vector= text_embed_model.encode(query) , limit=2)
         for r in resp:
-            print('--------------------------------------------------------')
-            print(r.score)
-            print(r.payload['content'])
-            print(r.payload['page'])
-            print(r.payload['pdf_name'])
-        # combined_context = " ".join([doc.page_content for doc in contexts])
-    
-    return combined_context , resp
+            if r.score > 0.38:
+                rs.append(r)
+        
+            
+        
+    contents = [r.payload['content'] for r in rs]
+    combined_context = "\n\n".join(contents)
 
-def retrieve_final_query(context, query):
-    qa_system_prompt = """You are an assistant for question-answering tasks. \
-    Use the following pieces of retrieved context to answer the question. \
+    # combined_context = " ".join([doc.page_content for doc in contexts])
+    return combined_context , contents, fresh_query
+
+def retrieve_final_query(context, query, resp):
+    qa_system_prompt = """
+    You are an assistant for question-answering tasks. Use the following pieces of retrieved context to answer the question. \
     If the user query is not in context, just say that you don't know. \
-    You are given 4 different contexts with initial line refering to the car .\
-    The cars are Tata punch , Tata nexon , Hyundai Exter , Hyundai Next Gen Verna.\
-    Use the context which is most relevant to the problem. \
-    Please do not provide any information that is not in the context. \
-    Keep in mind, you will lose the job, if you answer out of CONTEXT questions.\
+    You will lose the job, if you answer out of CONTEXT questions.\
     Keep the response in 7-8 lines
     CONTEXT: {context}"""
+    
+    
     qa_prompt = ChatPromptTemplate.from_messages(
         [
             ("system", qa_system_prompt),
-            MessagesPlaceholder("chat_history"),
             ("human", "{input}"),
         ]
     )
@@ -163,8 +186,9 @@ def retrieve_final_query(context, query):
     prompt = qa_prompt.format(
         chat_history=chat_history,
         input=query,
-        context=context
+        context = context
     )
+    # print(prompt)
     return prompt
     
 def generate_response(query):
@@ -172,32 +196,42 @@ def generate_response(query):
     global llm
     global chat_history
 
-    retrieved_context , resp = retrieve_documents(retriever, llm, query)
+    retrieved_context , resp, fresh_query= retrieve_documents( llm, query)
     # print(retrieved_context)
-    pdf_name = resp[0].payload['pdf_name']
-    page_number = resp[0].payload['page']
-    print(pdf_name, page_number)
-    image_response = retrieve_images(client, pdf_name, page_number, query)
-    if image_response:
-        img_path = image_response[0].payload['content']
-        print(img_path)
-    rfinal_query = retrieve_final_query(retrieved_context, query)
+    # pdf_name = resp[0].payload['pdf_name']
+    # page_number = resp[0].payload['page']
+    # print(pdf_name, page_number)
+    # image_response = retrieve_images(client, pdf_name, page_number, query)
+    # try:
+    #     img_path = image_response[0].payload['content']
+    #     print(img_path)
+    # except Exception:
+    #     pass
+    rfinal_query = retrieve_final_query(retrieved_context, fresh_query, resp)
     # print(rfinal_query)
     
     
-    print("\nGenerating the response....")
+    res : str = detect_probing_need(llm, retrieved_context, fresh_query)
+    if  res.split(',')[0].lower().strip().find("yes") != -1:
+        chat_history.extend([HumanMessage(rfinal_query), AIMessage(content=res[4:])])
+        if len(chat_history) > 4:
+            chat_history = chat_history[-4:]
+        return res[4:]
+    
+    # print("\nGenerating the response....")
     
     response = llm.generate(prompts=[rfinal_query])
     parsed_response = StrOutputParser().parse(response)
     str_response = parsed_response.generations[0][0].text
-    chat_history.extend([HumanMessage(content=query), AIMessage(content=str_response)])
+    chat_history.extend([HumanMessage(content=rfinal_query), AIMessage(content=str_response)])
     
     if len(chat_history) > 4:
         chat_history = chat_history[-4:]
-    return str_response
+    # return str_response
 
 if __name__ == "__main__":
-    query = "What can you tell me about battery capacity label in hyundai car?"
-    print("hi")
-    print(generate_response(query))
+    while True:
+        query = input()
+        print("hi")
+        print(generate_response(query))
 

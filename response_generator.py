@@ -58,7 +58,8 @@ def retrieve_final_query(context, query):
     Please do not provide any information that is not in the context. \
     Keep in mind, you will lose the job, if you answer out of CONTEXT questions.\
     Keep the response in 7-8 lines
-    CONTEXT: {context}"""
+    {context}
+    """
     qa_prompt = ChatPromptTemplate.from_messages(
         [
             ("system", qa_system_prompt),
