@@ -142,13 +142,13 @@ def retrieve_documents(retriever, llm, query):
         input=query
     )
 
-    if chat_history:
-        response = llm.generate(prompts=[prompt_text])
-        fresh_query = StrOutputParser().parse(response).generations[0][0].text
-        fresh_query = process_question(fresh_query)
-        print(fresh_query)
-    else:
-        fresh_query = query
+    # if chat_history:
+    response = llm.generate(prompts=[prompt_text])
+    fresh_query = StrOutputParser().parse(response).generations[0][0].text
+    fresh_query = process_question(fresh_query)
+    # print(fresh_query)
+    # else:
+    #     fresh_query = query
     # print("hi")
     # # contexts = retriever.invoke(fresh_query)
     # resp_1 = client.search(collection_name='text_collection_exter', query_vector= text_embed_model.encode(fresh_query) , limit=2)
@@ -261,8 +261,8 @@ def generate_response(query):
     global llm
     global chat_history
     query , documents = process_question(query)
-    for doc in documents:
-        print(doc)
+    # for doc in documents:
+    #     print(doc)
     fresh_query = retrieve_documents(retriever, llm, query)
     # print(retrieved_context)
     # pdf_name = resp[0].payload['pdf_name']
@@ -282,22 +282,22 @@ def generate_response(query):
     parsed_response = StrOutputParser().parse(response)
     str_response = parsed_response.generations[0][0].text
     chat_history.extend([HumanMessage(content=query), AIMessage(content=str_response)])
-    print(str_response)
+    # print(str_response)
     # if len(chat_history) > 4:
     #     chat_history = chat_history[-4:]
     if ("This is a general query applicable to all cars " in str_response):
 
         documents =['Tata Nexon', 'Tata Punch', 'Hyundai Exter', 'Hyundai Next Gen Verna']
-        context = get_context(documents, fresh_query)
+        context = get_context(documents, query)
         print('generating final answer....')
-        response = gen_ans(context , fresh_query)
+        response = gen_ans(context , query)
     
     elif ( "No further clarifications needed" in str_response):
 
         print("generating final answer....")
-        context = get_context(documents, fresh_query)
-        print(context)
-        response = gen_ans(context , fresh_query)
+        context = get_context(documents, query)
+        # print(context)
+        response = gen_ans(context , query)
     
     else:
 
