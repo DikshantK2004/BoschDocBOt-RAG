@@ -25,7 +25,7 @@ retriever = initialize_retriever(db)
 
 from qdrant_client import QdrantClient , models
 
-client = QdrantClient(path = "/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/qdrant_data_hope_plz",
+client = QdrantClient(path = "/Users/arushigarg/Desktop/bosch/BoschDocBOt-RAG/qdrant_yes_i_have_hope",
                       timeout= 3000)
 
 
@@ -60,7 +60,7 @@ class CLIPEmbedding:
 
 image_embed_model = CLIPEmbedding()
 
-text_embed_model = SentenceTransformer('sentence-transformers/roberta-large-nli-stsb-mean-tokens')
+text_embed_model = SentenceTransformer('all-MiniLM-L6-v2')
 
 
 llm = Ollama(model="phi3", callback_manager=CallbackManager([]))
@@ -121,22 +121,33 @@ def retrieve_documents(retriever, llm, query):
     fresh_query = StrOutputParser().parse(response).generations[0][0].text
     print("hi")
     # contexts = retriever.invoke(fresh_query)
-    resp = client.search(collection_name='text_collection', query_vector= text_embed_model.encode(query) , limit=10)
-    contents = [r.payload['content'] for r in resp]
-    combined_context = "\n".join(contents)
-    for r in resp:
-        print('--------------------------------------------------------')
-        print(r.score)
-        print(r.payload['content'])
-        print(r.payload['page'])
-        print(r.payload['pdf_name'])
-    # combined_context = " ".join([doc.page_content for doc in contexts])
+    resp_1 = client.search(collection_name='text_collection_exter', query_vector= text_embed_model.encode(fresh_query) , limit=2)
+    resp_2 = client.search(collection_name='text_collection_nexon-owner-manual-2022', query_vector= text_embed_model.encode(fresh_query) , limit=2)
+    resp_3 = client.search(collection_name='text_collection_Next_Gen_Verna', query_vector= text_embed_model.encode(fresh_query) , limit=2)
+    resp_4 = client.search(collection_name='text_collection_punch-bsvi-09-09-21', query_vector= text_embed_model.encode(fresh_query) , limit=2)
+# props = resp[0].__dict__.keys()
+    responses = [resp_1 , resp_2 , resp_3 , resp_4]
+    combined_context = ""
+    for resp in responses:
+        contents = [r.payload['content'] for r in resp]
+        combined_context = "\n".join(contents)
+        for r in resp:
+            print('--------------------------------------------------------')
+            print(r.score)
+            print(r.payload['content'])
+            print(r.payload['page'])
+            print(r.payload['pdf_name'])
+        # combined_context = " ".join([doc.page_content for doc in contexts])
+    
     return combined_context , resp
 
 def retrieve_final_query(context, query):
     qa_system_prompt = """You are an assistant for question-answering tasks. \
     Use the following pieces of retrieved context to answer the question. \
     If the user query is not in context, just say that you don't know. \
+    You are given 4 different contexts with initial line refering to the car .\
+    The cars are Tata punch , Tata nexon , Hyundai Exter , Hyundai Next Gen Verna.\
+    Use the context which is most relevant to the problem. \
     Please do not provide any information that is not in the context. \
     Keep in mind, you will lose the job, if you answer out of CONTEXT questions.\
     Keep the response in 7-8 lines
@@ -167,8 +178,9 @@ def generate_response(query):
     page_number = resp[0].payload['page']
     print(pdf_name, page_number)
     image_response = retrieve_images(client, pdf_name, page_number, query)
-    img_path = image_response[0].payload['content']
-    print(img_path)
+    if image_response:
+        img_path = image_response[0].payload['content']
+        print(img_path)
     rfinal_query = retrieve_final_query(retrieved_context, query)
     # print(rfinal_query)
     
@@ -185,7 +197,7 @@ def generate_response(query):
     return str_response
 
 if __name__ == "__main__":
-    query = "What is the exterior overview of the exter car ?"
+    query = "What can you tell me about battery capacity label in hyundai car?"
     print("hi")
     print(generate_response(query))
 
